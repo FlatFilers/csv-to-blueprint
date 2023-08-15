@@ -23,27 +23,19 @@ export function fileCreated(listener: FlatfileListener) {
 
         // Check for duplicate actions before adding new ones
         const hasLogFileAction = actions.some(
-          (action) => action.operation === 'logFileContents'
-        )
-        const hasDecryptAction = actions.some(
-          (action) => action.operation === 'decryptAction'
+          (action) => action.operation === 'createWorkbookFromFile'
         )
 
         const newActions = [...actions]
 
         if (!hasLogFileAction) {
           newActions.push({
-            operation: 'logFileContents',
-            label: 'Log File Metadata',
-            description: 'This will log the file metadata.',
-          })
-        }
-
-        if (!hasDecryptAction) {
-          newActions.push({
-            operation: 'decryptAction',
-            label: 'Decrypt File',
-            description: 'This will create a new decrypted file.',
+            operation: 'createWorkbookFromFile',
+            label: 'Create Workbook From File',
+            description:
+              'This will create a Flatfile workbook based on the contents of the file.',
+            mode: 'foreground',
+            confirm: true,
           })
         }
 
