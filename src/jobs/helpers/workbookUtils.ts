@@ -36,19 +36,48 @@ export function inferFieldType(data: any): string {
   }
 }
 
-export async function createSheetConfig(
+async function createSheetConfig(
   headers: string[],
   records: any[]
 ): Promise<SheetConfig> {
-  const fields = headers.map((header) => ({
-    key: header,
-    name: header,
-    type: inferFieldType(records[0][header]),
-  }))
+  // Construct a mapping of constraints for each field
+  const constraintsMapping: { [key: string]: any[] } = {}
+
+  for (const record of records) {
+    const fieldName = record.values['Field Name'].value
+
+    headers.forEach((header) => {
+      if (!constraintsMapping[header]) {
+        constraintsMapping[header] = []
+      }
+
+      if (fieldName === 'Is Required?' && record.values[header].value === 'x') {
+        constraintsMapping[header].push({ type: 'required' })
+      } else if (
+        fieldName === 'Is Unique?' &&
+        record.values[header].value === 'x'
+      ) {
+        constraintsMapping[header].push({ type: 'unique' })
+      }
+      // You can add more conditions here for other types of constraints
+    })
+  }
+
+  const fields = headers.map((header) => {
+    const fieldType = inferFieldType(records[0].values[header].value)
+    const constraints = constraintsMapping[header] || []
+
+    return {
+      key: header,
+      name: header,
+      type: fieldType,
+      constraints: constraints,
+    }
+  })
 
   return {
     name: 'Dynamically Generated Blueprint',
-    fields: fields as any[],
+    fields: fields as any[], // Temporarily cast to any[] to satisfy type checking
   }
 }
 
@@ -67,12 +96,13 @@ export async function handleJobReady({
     const sheetId = workbook.data.sheets[0].id
 
     const recordsResponse = await api.records.get(sheetId)
-    const headers = Object.keys(recordsResponse.data.records[0])
+    const records = recordsResponse.data.records
 
-    const sheetConfig = await createSheetConfig(
-      headers,
-      recordsResponse.data.records
-    )
+    // Extract headers/column names from the records
+    const headers = Object.keys(records[0].values) // Assuming the first record has all the headers
+
+    // Generate the dynamic sheetConfig based on the headers and records
+    const sheetConfig = await createSheetConfig(headers, records)
 
     console.log('Generated SheetConfig:', sheetConfig)
 
