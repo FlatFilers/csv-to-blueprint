@@ -5,6 +5,14 @@ import { Flatfile } from '@flatfile/api'
 import { acknowledgeJob, completeJob, failJob } from '../helpers/jobHelpers'
 import { FlatfileEvent } from '@flatfile/listener'
 
+const flatfileFieldTypeMapping: { [key: string]: string } = {
+  String: 'string',
+  Enumeration: 'enum',
+  Int: 'number',
+  Float: 'number',
+  Boolean: 'boolean',
+}
+
 export async function createWorkbookWithSheetConfig(
   sheetConfig: SheetConfig,
   spaceId: string
@@ -25,59 +33,94 @@ export async function createWorkbookWithSheetConfig(
 }
 
 export function inferFieldType(data: any): string {
-  if (typeof data === 'string') {
-    return 'string'
-  } else if (typeof data === 'number') {
-    return 'number'
-  } else if (typeof data === 'boolean') {
-    return 'boolean'
-  } else {
-    return 'string' // Default to string if unable to infer
-  }
+  return flatfileFieldTypeMapping[data] || 'string' // default to 'string' if type is not recognized
 }
 
-async function createSheetConfig(
+function getEnumerationsForField(fieldName: string, records: any[]): string[] {
+  const enumRecord = records.find(
+    (record) => record.values['Field Name'].value === 'Enumerations'
+  )
+  const enumValue = enumRecord?.values[fieldName]?.value
+  return enumValue ? enumValue.split(',').map((value) => value.trim()) : []
+}
+
+export async function createSheetConfig(
   headers: string[],
   records: any[]
 ): Promise<SheetConfig> {
-  // Construct a mapping of constraints for each field
   const constraintsMapping: { [key: string]: any[] } = {}
 
   for (const record of records) {
-    const fieldName = record.values['Field Name'].value
+    // Check for "Is Required?" and add required constraint
+    if (record.values['Field Name'].value === 'Is Required?') {
+      for (const header of headers) {
+        if (!constraintsMapping[header]) {
+          constraintsMapping[header] = []
+        }
 
-    headers.forEach((header) => {
-      if (!constraintsMapping[header]) {
-        constraintsMapping[header] = []
+        if (record.values[header].value === 'x') {
+          constraintsMapping[header].push({ type: 'required' })
+        }
       }
+    }
 
-      if (fieldName === 'Is Required?' && record.values[header].value === 'x') {
-        constraintsMapping[header].push({ type: 'required' })
-      } else if (
-        fieldName === 'Is Unique?' &&
-        record.values[header].value === 'x'
-      ) {
-        constraintsMapping[header].push({ type: 'unique' })
+    // Check for "Is Unique?" and add unique constraint
+    if (record.values['Field Name'].value === 'Is Unique?') {
+      for (const header of headers) {
+        if (!constraintsMapping[header]) {
+          constraintsMapping[header] = []
+        }
+
+        if (record.values[header].value === 'x') {
+          constraintsMapping[header].push({ type: 'unique' })
+        }
       }
-      // You can add more conditions here for other types of constraints
-    })
+    }
   }
 
   const fields = headers.map((header) => {
-    const fieldType = inferFieldType(records[0].values[header].value)
-    const constraints = constraintsMapping[header] || []
+    const firstRecordValue = records[0].values[header].value
+    const fieldType = inferFieldType(firstRecordValue)
+    let config: any = {}
+
+    switch (fieldType) {
+      case 'string':
+        config = { size: 'normal' }
+        break
+      case 'number':
+        config = { decimalPlaces: 2 }
+        break
+      case 'boolean':
+        config = { allowIndeterminate: false }
+        break
+      case 'enum':
+        const enumValues = getEnumerationsForField(header, records)
+        if (enumValues.length > 0) {
+          config = {
+            options: enumValues.map((value) => ({
+              value,
+              label: value,
+            })),
+          }
+        }
+        break
+      // ... other cases ...
+    }
 
     return {
       key: header,
       name: header,
       type: fieldType,
-      constraints: constraints,
+      constraints: constraintsMapping[header] || [],
+      config: config,
     }
   })
 
+  // ... rest of the function ...
+
   return {
     name: 'Dynamically Generated Blueprint',
-    fields: fields as any[], // Temporarily cast to any[] to satisfy type checking
+    fields: fields as any[],
   }
 }
 
