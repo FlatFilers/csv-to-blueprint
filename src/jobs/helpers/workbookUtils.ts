@@ -81,6 +81,30 @@ async function createSheetConfig(
   }
 }
 
+async function deleteEmptyWorkbooks(spaceId: string): Promise<void> {
+  try {
+    console.log(`Attempting to delete empty workbooks for space: ${spaceId}`)
+
+    const response = await api.workbooks.list({ spaceId })
+    const workbooks = response.data
+    console.log(`Found ${workbooks.length} workbooks in space: ${spaceId}`)
+
+    for (const workbook of workbooks) {
+      if (workbook.sheets.length === 0) {
+        console.log(`Deleting empty workbook with ID: ${workbook.id}`)
+        await api.workbooks.delete(workbook.id)
+      } else {
+        console.log(
+          `Workbook with ID: ${workbook.id} has sheets and will not be deleted.`
+        )
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting empty workbooks:', error)
+    throw error
+  }
+}
+
 export async function handleJobReady({
   context: { fileId, jobId },
 }: FlatfileEvent) {
@@ -107,6 +131,8 @@ export async function handleJobReady({
     console.log('Generated SheetConfig:', sheetConfig)
 
     await createWorkbookWithSheetConfig(sheetConfig, spaceId)
+
+    await deleteEmptyWorkbooks(spaceId)
 
     await completeJob(
       jobId,
